@@ -28,15 +28,18 @@ jobs:
         with:
           python-version: '3.11' # You can specify a different version if needed.
 
+
+      # Step 4: CORRECTED ORDER - Install Playwright browsers AFTER the library is installed.
+      - name: Install Playwright Browsers
+        run: python -m playwright install --with-deps
+        
       # Step 3: CORRECTED ORDER - Install Python libraries FIRST.
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
       
-      # Step 4: CORRECTED ORDER - Install Playwright browsers AFTER the library is installed.
-      - name: Install Playwright Browsers
-        run: python -m playwright install --with-deps
+      
       
       # Step 5: This is the main step. It runs your scraper.py script.
       # It uses environment variables to securely pass your Supabase credentials.
