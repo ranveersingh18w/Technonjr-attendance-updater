@@ -1,0 +1,47 @@
+# This is a GitHub Actions workflow file.
+# It defines a job that will automatically run your Python scraper on a schedule.
+
+name: Run Attendance Scraper
+
+on:
+  # This allows you to run the workflow manually from the Actions tab on GitHub.
+  workflow_dispatch:
+  
+  # This sets up the schedule. The cron string is in UTC time.
+  # It's scheduled to run at 30 minutes past the hour for your specified times in IST.
+  schedule:
+    - cron: '30 4,5,6,7,10,12,16 * * *'
+
+jobs:
+  scrape:
+    # The type of runner that the job will run on.
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Checks out your repository under $GITHUB_WORKSPACE, so your job can access it.
+      - name: Check out repository
+        uses: actions/checkout@v3
+
+      # Step 2: Sets up a Python environment for your script.
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11' # You can specify a different version if needed.
+
+      # Step 3: Installs Playwright's browsers (Chromium, Firefox, WebKit).
+      - name: Install Playwright Browsers
+        run: python -m playwright install --with-deps
+
+      # Step 4: Installs the Python libraries listed in your requirements.txt file.
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      # Step 5: This is the main step. It runs your scraper.py script.
+      # It uses environment variables to securely pass your Supabase credentials.
+      - name: Run the scraper
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python scraper.py
