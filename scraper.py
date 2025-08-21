@@ -261,7 +261,7 @@ def run_scraper():
                     page.keyboard.press("Escape")
                     
                     for course_name_with_code in course_list_names:
-                        subject_.name = course_name_with_code.split(' (')[0].strip()
+                        subject_name = course_name_with_code.split(' (')[0].strip()
                         logging.info(f"    -> Scraping Course: {course_name_with_code}")
                         course_dropdown.click()
                         page.get_by_role("option", name=course_name_with_code, exact=True).click()
