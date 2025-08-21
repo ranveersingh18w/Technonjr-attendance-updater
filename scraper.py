@@ -6,6 +6,7 @@ import random
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 from supabase import create_client, Client
 import pandas as pd
+from playwright_stealth import stealth_sync
 
 # --- Logger Setup ---
 # Use logging for cleaner output in GitHub Actions
@@ -207,6 +208,7 @@ def run_scraper():
         logging.info(">>> Launching browser...")
         browser = p.chromium.launch(headless=HEADLESS_MODE)
         page = browser.new_page()
+        stealth_sync(page)
         # Increase the default timeout for all actions to give the page more time
         page.set_default_timeout(90000) 
         
@@ -259,7 +261,7 @@ def run_scraper():
                     page.keyboard.press("Escape")
                     
                     for course_name_with_code in course_list_names:
-                        subject_name = course_name_with_code.split(' (')[0].strip()
+                        subject_.name = course_name_with_code.split(' (')[0].strip()
                         logging.info(f"    -> Scraping Course: {course_name_with_code}")
                         course_dropdown.click()
                         page.get_by_role("option", name=course_name_with_code, exact=True).click()
