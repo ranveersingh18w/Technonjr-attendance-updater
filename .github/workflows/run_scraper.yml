@@ -7,10 +7,9 @@ on:
   # This allows you to run the workflow manually from the Actions tab on GitHub.
   workflow_dispatch:
   
-  # This sets up the schedule. The cron string is in UTC time.
-  # It's scheduled to run at 30 minutes past the hour for your specified times in IST.
+  # This schedule is now set to run the scraper every 30 minutes.
   schedule:
-    - cron: '30 4,5,6,7,10,12,16 * * *'
+    - cron: '*/30 * * * *'
 
 jobs:
   scrape:
@@ -28,13 +27,13 @@ jobs:
         with:
           python-version: '3.11' # You can specify a different version if needed.
 
-      # Step 3: CORRECTED ORDER - Install Python libraries FIRST.
+      # Step 3: Install Python libraries.
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
       
-      # Step 4: CORRECTED ORDER - Install Playwright browsers AFTER the library is installed.
+      # Step 4: Install Playwright browsers.
       - name: Install Playwright Browsers
         run: python -m playwright install --with-deps
       
