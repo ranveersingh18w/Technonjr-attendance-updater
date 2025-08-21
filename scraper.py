@@ -6,7 +6,7 @@ import random
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 from supabase import create_client, Client
 import pandas as pd
-from playwright_stealth import stealth_sync
+from playwright_stealth.sync import stealth_sync
 
 # --- Logger Setup ---
 # Use logging for cleaner output in GitHub Actions
