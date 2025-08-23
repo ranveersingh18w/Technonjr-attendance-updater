@@ -2,4 +2,3 @@ pandas
 playwright
 supabase
 openpyxl
-playwright-stealth
