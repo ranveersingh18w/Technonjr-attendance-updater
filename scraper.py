@@ -3,6 +3,7 @@ import re
 import logging
 import time
 import random
+import math # Added for circular movement calculation
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 from supabase import create_client, Client
 import pandas as pd
@@ -38,6 +39,57 @@ def sanitize_table_name(name):
 def sanitize_column_name(name):
     """Sanitizes a column name by replacing invalid characters."""
     return name.replace('/', '_')
+
+# --- NEW FUNCTION TO SIMULATE HUMAN-LIKE INTERACTION ---
+def simulate_human_interaction(page):
+    """
+    Simulates human-like mouse movements and clicks to help bypass bot detection.
+    """
+    logging.info(">>> Simulating human-like interaction...")
+    
+    # Get the dimensions of the viewport
+    viewport_size = page.viewport_size
+    if not viewport_size:
+        logging.warning("Could not get viewport size. Skipping mouse simulation.")
+        return
+        
+    width, height = viewport_size['width'], viewport_size['height']
+    
+    # Define the center and radius for the circular movement
+    center_x, center_y = width / 2, height / 2
+    radius = min(width, height) / 4 # A quarter of the smaller dimension
+    
+    # Start mouse off-screen or at a corner
+    page.mouse.move(random.randint(0, 50), random.randint(0, 50))
+    time.sleep(random.uniform(0.5, 1.0))
+
+    # Move mouse in a circular path
+    steps = 60 # Number of steps in the circle
+    for i in range(steps + 1):
+        angle = (i / steps) * 2 * math.pi # 2*pi is a full circle in radians
+        
+        # Add some randomness to the radius and angle to make it less perfect
+        rand_radius = radius + random.randint(-20, 20)
+        rand_angle = angle + random.uniform(-0.1, 0.1)
+        
+        x = center_x + rand_radius * math.cos(rand_angle)
+        y = center_y + rand_radius * math.sin(rand_angle)
+        
+        # The 'steps' parameter in page.mouse.move makes the movement smoother
+        page.mouse.move(x, y, steps=random.randint(1, 4))
+        # Shorter sleep for smoother, continuous movement
+        time.sleep(random.uniform(0.01, 0.04))
+
+    # Perform a couple of random clicks near the center of the page
+    logging.info(">>> Performing random clicks...")
+    for _ in range(random.randint(2, 4)):
+        click_x = center_x + random.randint(-100, 100)
+        click_y = center_y + random.randint(-100, 100)
+        page.mouse.click(click_x, click_y)
+        time.sleep(random.uniform(0.3, 0.8))
+        
+    logging.info(">>> Human-like interaction simulation complete.")
+
 
 # --- Supabase Interaction ---
 def recreate_table_for_upload(supabase: Client, table_name: str, df: pd.DataFrame):
@@ -218,6 +270,10 @@ def run_scraper():
             page.goto(ATTENDANCE_URL, wait_until="domcontentloaded", timeout=120000)
             logging.info(">>> Page navigation complete. Waiting a bit for scripts to load...")
             time.sleep(random.uniform(3, 5)) # Wait for extra scripts like reCAPTCHA
+
+            # --- CALL THE NEW SIMULATION FUNCTION ---
+            simulate_human_interaction(page)
+            # --- END OF NEW CODE ---
 
             # --- Apply Filters ---
             logging.info(">>> Applying filters...")
