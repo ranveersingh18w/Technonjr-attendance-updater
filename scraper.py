@@ -2,11 +2,11 @@ import os
 import re
 import logging
 import time
-import math # Added for circular movement calculation
+import math 
+import random 
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 from supabase import create_client, Client
 import pandas as pd
-import random # Added for random delays
 
 # --- Logger Setup ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -47,23 +47,16 @@ def simulate_human_interaction(page):
     page.mouse.move(random.randint(0, 50), random.randint(0, 50))
     time.sleep(random.uniform(0.5, 1.0))
 
-    steps = 60
+    steps = 50 # Reduced steps for quicker simulation
     for i in range(steps + 1):
         angle = (i / steps) * 2 * math.pi
         rand_radius = radius + random.randint(-20, 20)
         rand_angle = angle + random.uniform(-0.1, 0.1)
         x = center_x + rand_radius * math.cos(rand_angle)
         y = center_y + rand_radius * math.sin(rand_angle)
-        page.mouse.move(x, y, steps=random.randint(1, 4))
-        time.sleep(random.uniform(0.01, 0.04))
+        page.mouse.move(x, y, steps=random.randint(1, 3))
+        time.sleep(random.uniform(0.01, 0.03))
 
-    logging.info(">>> Performing random clicks...")
-    for _ in range(random.randint(2, 4)):
-        click_x = center_x + random.randint(-100, 100)
-        click_y = center_y + random.randint(-100, 100)
-        page.mouse.click(click_x, click_y)
-        time.sleep(random.uniform(0.3, 0.8))
-        
     logging.info(">>> Human-like interaction simulation complete.")
 
 # --- Supabase Interaction ---
@@ -210,20 +203,41 @@ def run_scraper():
         logging.info(">>> Launching browser...")
         browser = p.chromium.launch(headless=HEADLESS_MODE)
         page = browser.new_page()
-        page.set_default_timeout(60000)
+        # Set a default timeout for all actions
+        page.set_default_timeout(60000) 
         try:
             logging.info(f">>> Navigating to {ATTENDANCE_URL}")
-            page.goto(ATTENDANCE_URL, wait_until="networkidle", timeout=90000)
+            page.goto(ATTENDANCE_URL, wait_until="domcontentloaded", timeout=90000)
 
-            # --- SIMULATE HUMAN INTERACTION ---
+            # --- NEW: INTELLIGENT WAITING ---
+            logging.info(">>> Page loaded. Waiting for potential CAPTCHA to clear and content to load...")
+            department_button_selector = 'label:has-text("Select Department") + button'
+            try:
+                # Wait up to 2 minutes for the main content to appear
+                page.wait_for_selector(department_button_selector, state="visible", timeout=120000)
+                logging.info(">>> Main content detected. Proceeding with automation.")
+            except PlaywrightTimeoutError:
+                logging.error(">>> FAILED: Timed out waiting for the main page content after 2 minutes.")
+                logging.error(">>> This likely means the CAPTCHA challenge was not passed successfully.")
+                raise # Stop the script if the page doesn't load
+
+            # Now that the page is ready, simulate human interaction
             simulate_human_interaction(page)
 
             logging.info(">>> Applying filters...")
-            page.locator('label:has-text("Select Department") + button').click()
+            page.locator(department_button_selector).click()
+            time.sleep(random.uniform(1.5, 2.5)) # Human-like pause
+
             page.get_by_role("option", name="Computer Science and Engineering", exact=True).click()
+            time.sleep(random.uniform(1.5, 2.5)) # Human-like pause
+
             page.locator('label:has-text("Select Batch") + button').click()
+            time.sleep(random.uniform(1.0, 2.0))
             page.get_by_role("option", name="2024-2028", exact=True).click()
+            time.sleep(random.uniform(1.5, 2.5))
+
             page.locator('label:has-text("Select Semester") + button').click()
+            time.sleep(random.uniform(1.0, 2.0))
             page.get_by_role("option", name="Semester 3", exact=True).click()
             
             section_dropdown_selector = 'label:has-text("Select Section") + button'
@@ -233,12 +247,14 @@ def run_scraper():
             for section_name in sections:
                 logging.info(f"\n======= PROCESSING SECTION: {section_name.replace('Section Section', 'Section')} =======")
                 page.locator(section_dropdown_selector).click()
+                time.sleep(random.uniform(1.0, 2.0))
                 page.get_by_role("option", name=section_name, exact=True).click()
                 page.wait_for_load_state('networkidle')
 
                 for attendance_type in ["RTU Classes", "Labs"]:
                     logging.info(f"\n  --- Processing Type: {attendance_type} ---")
                     page.locator('label:has-text("Select Attendance Type") + button').click()
+                    time.sleep(random.uniform(1.0, 2.0))
                     page.get_by_role("option", name=attendance_type, exact=True).click()
                     page.wait_for_load_state('networkidle')
 
@@ -254,6 +270,7 @@ def run_scraper():
                         subject_name = course_name_with_code.split(' (')[0].strip()
                         logging.info(f"\n    -> Scraping Course: {course_name_with_code}")
                         course_dropdown.click()
+                        time.sleep(random.uniform(1.0, 2.0))
                         page.get_by_role("option", name=course_name_with_code, exact=True).click()
                         course_data = get_data_for_course(page)
                         clean_section_name = section_name.replace('Section Section', 'Section')
