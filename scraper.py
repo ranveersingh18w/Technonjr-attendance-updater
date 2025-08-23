@@ -3,7 +3,8 @@ import re
 import logging
 import time
 import random
-from playwright_extra.sync_api import sync_playwright_extra, TimeoutError as PlaywrightTimeoutError
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+from playwright_stealth.sync import stealth_sync # <-- Correct import
 from supabase import create_client, Client
 import pandas as pd
 
@@ -127,7 +128,6 @@ def get_data_for_course(page):
     page_count = 1
     while True:
         try:
-            # Wait for the button to be available before trying to interact
             page.wait_for_selector('button:has-text("Next")', state="attached", timeout=10000)
             next_button = page.get_by_role("button", name="Next")
             if not next_button.is_enabled():
@@ -203,18 +203,21 @@ def get_data_for_course(page):
 def run_scraper():
     """Main function to orchestrate the browser automation and scraping process."""
     all_subjects_data = {}
-    # Use playwright_extra to launch a stealth browser
-    with sync_playwright_extra() as p:
+    # Use the standard playwright context manager
+    with sync_playwright() as p:
         logging.info(">>> Launching stealth browser...")
         browser = p.chromium.launch(headless=HEADLESS_MODE)
         page = browser.new_page()
+        
+        # Apply stealth settings to the page
+        stealth_sync(page)
+        
         page.set_default_timeout(90000) 
         
         try:
             logging.info(f">>> Navigating to {ATTENDANCE_URL}")
             page.goto(ATTENDANCE_URL, wait_until="domcontentloaded", timeout=120000)
             
-            # Wait for the page to settle after initial load
             logging.info(">>> Page loaded. Waiting for dynamic content...")
             time.sleep(random.uniform(5, 8))
 
