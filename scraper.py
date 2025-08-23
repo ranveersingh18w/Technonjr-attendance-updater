@@ -2,85 +2,61 @@ import os
 import re
 import logging
 import time
-import random
 import math # Added for circular movement calculation
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 from supabase import create_client, Client
 import pandas as pd
-from playwright_stealth.sync import stealth_sync
+import random # Added for random delays
 
 # --- Logger Setup ---
-# Use logging for cleaner output in GitHub Actions
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # --- CONFIGURATION ---
 ATTENDANCE_URL = "http://103.159.68.60:3535/attendance"
-# HEADLESS_MODE must be True for GitHub Actions
-HEADLESS_MODE = True 
+HEADLESS_MODE = True
 
 # --- Supabase Credentials (from GitHub Secrets) ---
-# This is the correct way to handle secrets in a production environment like GitHub Actions
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
-logging.info("--- Configuration ---")
-logging.info(f"URL: {ATTENDANCE_URL}")
-logging.info(f"Headless Mode: {HEADLESS_MODE}")
-logging.info(f"Supabase URL Loaded: {'Yes' if SUPABASE_URL else 'No'}")
-logging.info(f"Supabase Key Loaded: {'Yes' if SUPABASE_KEY else 'No'}\n")
-
 
 # --- Helper Functions ---
 def sanitize_table_name(name):
-    """Sanitizes a string to be a valid table name."""
     name = re.sub(r'[^a-zA-Z0-9_]', '_', name)
     name = re.sub(r'__+', '_', name)
     return name.strip('_').lower()
 
 def sanitize_column_name(name):
-    """Sanitizes a column name by replacing invalid characters."""
     return name.replace('/', '_')
 
-# --- NEW FUNCTION TO SIMULATE HUMAN-LIKE INTERACTION ---
+# --- HUMAN-LIKE INTERACTION SIMULATION ---
 def simulate_human_interaction(page):
     """
     Simulates human-like mouse movements and clicks to help bypass bot detection.
     """
     logging.info(">>> Simulating human-like interaction...")
     
-    # Get the dimensions of the viewport
     viewport_size = page.viewport_size
     if not viewport_size:
         logging.warning("Could not get viewport size. Skipping mouse simulation.")
         return
         
     width, height = viewport_size['width'], viewport_size['height']
-    
-    # Define the center and radius for the circular movement
     center_x, center_y = width / 2, height / 2
-    radius = min(width, height) / 4 # A quarter of the smaller dimension
+    radius = min(width, height) / 4
     
-    # Start mouse off-screen or at a corner
     page.mouse.move(random.randint(0, 50), random.randint(0, 50))
     time.sleep(random.uniform(0.5, 1.0))
 
-    # Move mouse in a circular path
-    steps = 60 # Number of steps in the circle
+    steps = 60
     for i in range(steps + 1):
-        angle = (i / steps) * 2 * math.pi # 2*pi is a full circle in radians
-        
-        # Add some randomness to the radius and angle to make it less perfect
+        angle = (i / steps) * 2 * math.pi
         rand_radius = radius + random.randint(-20, 20)
         rand_angle = angle + random.uniform(-0.1, 0.1)
-        
         x = center_x + rand_radius * math.cos(rand_angle)
         y = center_y + rand_radius * math.sin(rand_angle)
-        
-        # The 'steps' parameter in page.mouse.move makes the movement smoother
         page.mouse.move(x, y, steps=random.randint(1, 4))
-        # Shorter sleep for smoother, continuous movement
         time.sleep(random.uniform(0.01, 0.04))
 
-    # Perform a couple of random clicks near the center of the page
     logging.info(">>> Performing random clicks...")
     for _ in range(random.randint(2, 4)):
         click_x = center_x + random.randint(-100, 100)
@@ -90,15 +66,13 @@ def simulate_human_interaction(page):
         
     logging.info(">>> Human-like interaction simulation complete.")
 
-
 # --- Supabase Interaction ---
 def recreate_table_for_upload(supabase: Client, table_name: str, df: pd.DataFrame):
-    """Drops and recreates a Supabase table with a new schema based on the DataFrame."""
-    logging.info(f"    -> Recreating table '{table_name}'...")
+    logging.info(f"    -> Recreating table '{table_name}' for a fresh upload...")
     
     drop_sql = f'DROP TABLE IF EXISTS public."{table_name}";'
     supabase.rpc('execute_sql', {'sql': drop_sql}).execute()
-    logging.info(f"    -> Table '{table_name}' dropped.")
+    logging.info(f"    -> Table '{table_name}' dropped successfully.")
     time.sleep(2)
 
     columns_definitions = []
@@ -112,27 +86,30 @@ def recreate_table_for_upload(supabase: Client, table_name: str, df: pd.DataFram
     
     try:
         supabase.rpc('execute_sql', {'sql': create_sql}).execute()
-        logging.info(f"    -> Table '{table_name}' created.")
+        logging.info(f"    -> Table '{table_name}' created with fresh schema.")
         
+        logging.info(f"    -> Enabling RLS on '{table_name}'...")
         enable_rls_sql = f'ALTER TABLE public."{table_name}" ENABLE ROW LEVEL SECURITY;'
         supabase.rpc('execute_sql', {'sql': enable_rls_sql}).execute()
 
+        logging.info(f"    -> Creating 'Allow public access' policy on '{table_name}'...")
         create_policy_sql = f"""
         DROP POLICY IF EXISTS "Allow public access" ON public."{table_name}";
         CREATE POLICY "Allow public access" ON public."{table_name}"
         FOR ALL USING (true) WITH CHECK (true);
         """
         supabase.rpc('execute_sql', {'sql': create_policy_sql}).execute()
-        logging.info(f"    -> RLS and policy applied to '{table_name}'.")
+        logging.info("    -> RLS and policy applied successfully.")
+
+        logging.info("    -> Waiting 5 seconds for schema cache to refresh...")
         time.sleep(5)
     except Exception as e:
         logging.error(f"    -> ❌ FAILED to create table or apply policy. Error: {e}")
         raise
 
 def upload_to_supabase(supabase: Client, subject_name: str, student_records: list):
-    """Processes scraped data and uploads it to a Supabase table."""
     if not student_records:
-        logging.warning(f"No records found for '{subject_name}', skipping upload.")
+        logging.warning(f"No records for '{subject_name}', skipping.")
         return
 
     table_name = sanitize_table_name(subject_name)
@@ -147,63 +124,41 @@ def upload_to_supabase(supabase: Client, subject_name: str, student_records: lis
             })
     
     if not long_format_data:
-        logging.warning(f"    -> No attendance dates were processed for '{subject_name}'.")
+        logging.warning(f"    -> No attendance dates found for '{subject_name}'.")
         return
 
     df_long = pd.DataFrame(long_format_data)
     df_pivot = df_long.pivot_table(
         index=['Roll_No', 'Name', 'Section'], columns='Date', values='Status', aggfunc='first'
     )
-    
+
     date_cols = df_pivot.columns.tolist()
     sorted_date_cols = sorted(date_cols, key=lambda d: pd.to_datetime(d, format='%d/%m/%Y'))
     df_pivot = df_pivot[sorted_date_cols]
     df_pivot.columns = [sanitize_column_name(col) for col in df_pivot.columns]
     df_final = df_pivot.reset_index()
-    logging.info(f"    -> Processed data into a table with {df_final.shape[0]} rows and {df_final.shape[1]} columns.")
 
     recreate_table_for_upload(supabase, table_name, df_final)
     records_to_upload = df_final.where(pd.notna(df_final), None).to_dict(orient='records')
 
-    logging.info(f"    -> Attempting to insert {len(records_to_upload)} records into '{table_name}'...")
+    logging.info(f"    -> Inserting {len(records_to_upload)} records into '{table_name}'...")
     try:
         supabase.table(table_name).insert(records_to_upload).execute()
-        logging.info(f"    -> ✅ Successfully inserted data for '{subject_name}'.")
+        logging.info(f"    -> ✅ Successfully saved data for '{subject_name}'.")
     except Exception as e:
-        logging.error(f"    -> ❌ FAILED to insert data for '{subject_name}'. Error: {e}")
+        logging.error(f"    -> ❌ FAILED to save data for '{subject_name}'. Error: {e}")
 
 # --- Scraping Logic ---
 def get_data_for_course(page):
-    """Scrapes all attendance pages for a selected course by navigating backwards."""
     all_student_records = []
-    logging.info("      -> Starting to scrape data for the selected course.")
-
-    # --- Navigate to the last page ---
-    logging.info("      -> Trying to find the 'Next' button to go to the last page.")
-    page_count = 1
+    page_num = 1
     while True:
-        try:
-            next_button = page.get_by_role("button", name="Next")
-            if not next_button.is_enabled():
-                logging.info(f"      -> 'Next' button is disabled. Reached the last page (Page {page_count}).")
-                break
-            next_button.click()
-            page.wait_for_load_state('networkidle', timeout=30000)
-            page_count += 1
-        except Exception:
-            logging.info("      -> 'Next' button not found or timed out. Assuming this is the last page.")
-            break
-
-    # --- Scrape backwards from the last page ---
-    page_num = 0
-    while True:
-        page_num += 1
-        logging.info(f"      -> Scraping page set {page_num} (from end to start)...")
+        logging.info(f"      -> Scraping page {page_num}...")
         try:
             page.wait_for_selector("table > tbody > tr:first-child", timeout=20000)
         except PlaywrightTimeoutError:
-            logging.warning("      -> WARNING - Timed out waiting for table content. The page might be empty.")
-            pass
+            logging.warning("      -> Timed out waiting for table content.")
+            break
 
         page_data = page.evaluate("""() => {
             const records = [];
@@ -211,7 +166,9 @@ def get_data_for_course(page):
             const dateHeaderMap = {};
             headerCells.forEach((th, index) => {
                 const headerText = th.innerText.trim();
-                if (/^\\d{2}\\/\\d{2}\\/\\d{4}$/.test(headerText)) { dateHeaderMap[headerText] = index; }
+                if (/^\\d{2}\\/\\d{2}\\/\\d{4}$/.test(headerText)) {
+                    dateHeaderMap[headerText] = index;
+                }
             });
             const studentRows = document.querySelectorAll('tbody tr');
             studentRows.forEach(row => {
@@ -236,77 +193,54 @@ def get_data_for_course(page):
             });
             return records;
         }""")
-        
         all_student_records.extend(page_data)
 
-        try:
-            prev_button = page.get_by_role("button", name="Previous")
-            if not prev_button.is_enabled():
-                logging.info("      -> 'Previous' button is disabled. Reached the first page.")
-                break
-            prev_button.click()
-            page.wait_for_load_state('networkidle', timeout=30000)
-        except Exception:
-            logging.info("      -> 'Previous' button not found or timed out. Stopping scrape for this course.")
+        next_button = page.get_by_role("button", name="Next")
+        if not next_button.is_enabled():
+            logging.info("      -> Reached the last page.")
             break
-            
-    logging.info(f"      -> Finished scraping for this course. Total records found: {len(all_student_records)}")
+        next_button.click()
+        page_num += 1
+        page.wait_for_load_state('networkidle', timeout=30000)
     return all_student_records
 
 def run_scraper():
-    """Main function to orchestrate the browser automation and scraping process."""
     all_subjects_data = {}
     with sync_playwright() as p:
         logging.info(">>> Launching browser...")
         browser = p.chromium.launch(headless=HEADLESS_MODE)
         page = browser.new_page()
-        stealth_sync(page)
-        # Increase the default timeout for all actions to give the page more time
-        page.set_default_timeout(90000) 
-        
+        page.set_default_timeout(60000)
         try:
             logging.info(f">>> Navigating to {ATTENDANCE_URL}")
-            # Increase navigation timeout and wait for DOM content to be loaded
-            page.goto(ATTENDANCE_URL, wait_until="domcontentloaded", timeout=120000)
-            logging.info(">>> Page navigation complete. Waiting a bit for scripts to load...")
-            time.sleep(random.uniform(3, 5)) # Wait for extra scripts like reCAPTCHA
+            page.goto(ATTENDANCE_URL, wait_until="networkidle", timeout=90000)
 
-            # --- CALL THE NEW SIMULATION FUNCTION ---
+            # --- SIMULATE HUMAN INTERACTION ---
             simulate_human_interaction(page)
-            # --- END OF NEW CODE ---
 
-            # --- Apply Filters ---
             logging.info(">>> Applying filters...")
             page.locator('label:has-text("Select Department") + button').click()
             page.get_by_role("option", name="Computer Science and Engineering", exact=True).click()
-            time.sleep(random.uniform(1, 2.5))
-
             page.locator('label:has-text("Select Batch") + button').click()
             page.get_by_role("option", name="2024-2028", exact=True).click()
-            time.sleep(random.uniform(1, 2.5))
-
             page.locator('label:has-text("Select Semester") + button').click()
             page.get_by_role("option", name="Semester 3", exact=True).click()
             
             section_dropdown_selector = 'label:has-text("Select Section") + button'
             page.wait_for_selector(section_dropdown_selector, state="visible", timeout=30000)
-            logging.info(">>> Filters applied. Ready to loop through sections.\n")
 
-            # --- Loop Through Sections, Types, and Courses ---
             sections = ["Section Section A", "Section Section B", "Section Section C"]
             for section_name in sections:
-                logging.info(f"======= PROCESSING SECTION: {section_name.replace('Section Section ', '')} =======")
+                logging.info(f"\n======= PROCESSING SECTION: {section_name.replace('Section Section', 'Section')} =======")
                 page.locator(section_dropdown_selector).click()
                 page.get_by_role("option", name=section_name, exact=True).click()
                 page.wait_for_load_state('networkidle')
-                time.sleep(random.uniform(2, 4))
 
                 for attendance_type in ["RTU Classes", "Labs"]:
-                    logging.info(f"  --- Processing Type: {attendance_type} ---")
+                    logging.info(f"\n  --- Processing Type: {attendance_type} ---")
                     page.locator('label:has-text("Select Attendance Type") + button').click()
                     page.get_by_role("option", name=attendance_type, exact=True).click()
                     page.wait_for_load_state('networkidle')
-                    time.sleep(random.uniform(2, 4))
 
                     course_dropdown = page.locator('label:has-text("Select Course") + button')
                     course_dropdown.click()
@@ -318,23 +252,18 @@ def run_scraper():
                     
                     for course_name_with_code in course_list_names:
                         subject_name = course_name_with_code.split(' (')[0].strip()
-                        logging.info(f"    -> Scraping Course: {course_name_with_code}")
+                        logging.info(f"\n    -> Scraping Course: {course_name_with_code}")
                         course_dropdown.click()
                         page.get_by_role("option", name=course_name_with_code, exact=True).click()
-                        
                         course_data = get_data_for_course(page)
-                        
                         clean_section_name = section_name.replace('Section Section', 'Section')
                         for record in course_data:
                             record['section'] = clean_section_name
-                            
                         if subject_name not in all_subjects_data:
                             all_subjects_data[subject_name] = []
                         all_subjects_data[subject_name].extend(course_data)
-
         except Exception as e:
-            logging.error(f"\n>>> ❌ AN ERROR OCCURRED: {e}")
-            logging.info(">>> Taking a screenshot of the page: scraper_error.png")
+            logging.error(f"\n>>> AN ERROR OCCURRED: {e}")
             page.screenshot(path="scraper_error.png")
         finally:
             logging.info("\n>>> Closing browser.")
@@ -343,20 +272,19 @@ def run_scraper():
 
 if __name__ == "__main__":
     if not SUPABASE_URL or not SUPABASE_KEY:
-        logging.error("❌ CRITICAL: Supabase credentials are not set as environment variables.")
+        logging.error("Supabase credentials are not set. Please set SUPABASE_URL and SUPABASE_KEY environment variables.")
     else:
         try:
             supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-            logging.info("--- Starting Scraper ---")
+            logging.info("\n--- Starting Scraper and Supabase Upload Process ---")
             start_time = time.time()
             all_data = run_scraper()
             if all_data:
-                logging.info("\n--- Scraper finished. Starting Supabase upload process. ---")
                 for subject, records in all_data.items():
                     upload_to_supabase(supabase, subject, records)
             else:
-                logging.warning("\n--- WARNING: No data was scraped. Nothing to upload. ---")
+                logging.warning("No data was scraped, skipping upload.")
             end_time = time.time()
-            logging.info(f"\n--- ✅ Process complete! Total time: {end_time - start_time:.2f}s ---")
+            logging.info(f"\n--- Process complete! Total time: {end_time - start_time:.2f}s ---")
         except Exception as e:
-            logging.error(f"❌ A critical error occurred in the main process: {e}")
+            logging.error(f"A critical error occurred in the main process: {e}")
